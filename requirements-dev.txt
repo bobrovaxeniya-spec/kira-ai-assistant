@@ -1,0 +1,7 @@
+# Development / test dependencies
+aiohttp==3.8.4
+pytest==7.4.0
+pytest-asyncio==0.22.0
+
+# Optional: tools for local development
+httpx==0.28.1

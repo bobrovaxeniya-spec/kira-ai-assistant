@@ -2,8 +2,8 @@ import os
 import logging
 import threading
 import asyncio
-from aiohttp import web
-import aiohttp
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socket
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -86,56 +86,88 @@ async def _start_aiohttp(application: "Application") -> None:
     Application.post_init, so lifecycle is managed by the Application.
     """
     port = int(os.getenv("HEALTH_PORT", "8080"))
-    aio_app = web.Application()
+    aio_app = create_health_app()
 
-    async def _health(request):
-        return web.Response(text="ok")
-
-    aio_app.router.add_get("/health", _health)
-
-    async def _ready(request):
-        """Readiness check: quick call to OLLAMA_API_URL to verify dependency is reachable."""
-        if not OLLAMA_API_URL:
-            return web.Response(status=503, text="OLLAMA_API_URL not configured")
-
-        # small probe payload
-        payload = {
-            "model": OLLAMA_MODEL,
-            "messages": [{"role": "user", "content": "ping"}],
-            "stream": False,
-        }
-        try:
-            timeout = aiohttp.ClientTimeout(total=3)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(OLLAMA_API_URL, json=payload) as resp:
-                    if 200 <= resp.status < 300:
-                        return web.Response(status=200, text="ok")
-                    text = await resp.text()
-                    return web.Response(status=503, text=f"ollama: status={resp.status} body={text}")
-        except Exception as e:
-            logger.debug("Readiness probe failed: %s", e)
-            return web.Response(status=503, text=f"unreachable: {e}")
-
-    aio_app.router.add_get("/ready", _ready)
-
-    runner = web.AppRunner(aio_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    # store runner for cleanup
-    application.bot_data["health_runner"] = runner
+    # start stdlib HTTP server in a background thread bound to HEALTH_PORT
+    Handler = create_health_app()
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    thread = threading.Thread(target=server.serve_forever, name="health-server", daemon=True)
+    thread.start()
+    application.bot_data["health_server"] = server
+    application.bot_data["health_thread"] = thread
     logger.info("Health endpoint started at http://0.0.0.0:%s/health", port)
 
 
 async def _stop_aiohttp(application: "Application") -> None:
     """Post-shutdown hook: cleanup aiohttp runner if present."""
-    runner = application.bot_data.pop("health_runner", None)
-    if runner is not None:
+    server = application.bot_data.pop("health_server", None)
+    thread = application.bot_data.pop("health_thread", None)
+    if server is not None:
         try:
-            await runner.cleanup()
-            logger.info("Health endpoint stopped")
+            server.shutdown()
+            server.server_close()
+            logger.info("Health endpoint stopped (server shutdown)")
         except Exception as e:
-            logger.error("Error cleaning up health endpoint: %s", e)
+            logger.error("Error shutting down health server: %s", e)
+    if thread is not None and thread.is_alive():
+        try:
+            thread.join(timeout=2)
+        except Exception:
+            logger.debug("Health thread did not exit cleanly")
+
+
+def create_health_app():
+    """Create a simple stdlib HTTP handler class for health/readiness.
+
+    We return the handler class so tests can instantiate a server around it.
+    """
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/health":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+
+            if self.path == "/ready":
+                if not OLLAMA_API_URL:
+                    self.send_response(503)
+                    self.end_headers()
+                    self.wfile.write(b"OLLAMA_API_URL not configured")
+                    return
+
+                payload = {
+                    "model": OLLAMA_MODEL,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "stream": False,
+                }
+                try:
+                    resp = requests.post(OLLAMA_API_URL, json=payload, timeout=3)
+                    if 200 <= resp.status_code < 300:
+                        self.send_response(200)
+                        self.end_headers()
+                        self.wfile.write(b"ok")
+                    else:
+                        self.send_response(503)
+                        self.end_headers()
+                        body = resp.text.encode("utf-8", errors="replace")
+                        self.wfile.write(bollama_error := b"ollama:" + body)
+                except Exception as e:
+                    self.send_response(503)
+                    self.end_headers()
+                    self.wfile.write(str(e).encode("utf-8"))
+                return
+
+            # Not found
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            logger.debug("healthserver: %s" % (format % args))
+
+    return Handler
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
