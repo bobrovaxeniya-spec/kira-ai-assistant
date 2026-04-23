@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  kira-bot:
+    build: .
+    container_name: kira-bot
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - kira-net
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "telegram-bot/bot.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  kira-net:
+    driver: bridge
