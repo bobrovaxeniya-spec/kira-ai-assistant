@@ -78,63 +78,38 @@ def send_llm_request(user_message: str) -> str:
         return ""
 
 
-class _HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(b"ok")
-        else:
-            self.send_response(404)
-            self.end_headers()
+async def _start_aiohttp(application: "Application") -> None:
+    """Post-init hook: start aiohttp health endpoint on the application's loop.
 
-    def log_message(self, format, *args):
-        # suppress default logging to stderr
-        logger.debug("healthserver: %s" % (format % args))
-
-
-def start_health_server(host: str = "0.0.0.0", port: int = 8080):
-    """Start a minimal aiohttp health endpoint in a separate thread.
-
-    Runs an aiohttp web app with GET /health -> 200 OK (text "ok").
-    The app is started on its own event loop inside a daemon thread so it
-    does not interfere with the bot's asyncio loop.
+    This runs the HTTP server in the same asyncio event loop as the bot via
+    Application.post_init, so lifecycle is managed by the Application.
     """
+    port = int(os.getenv("HEALTH_PORT", "8080"))
+    aio_app = web.Application()
 
-    async def _run_server():
-        app = web.Application()
+    async def _health(request):
+        return web.Response(text="ok")
 
-        async def _health(request):
-            return web.Response(text="ok")
+    aio_app.router.add_get("/health", _health)
 
-        app.router.add_get("/health", _health)
+    runner = web.AppRunner(aio_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    # store runner for cleanup
+    application.bot_data["health_runner"] = runner
+    logger.info("Health endpoint started at http://0.0.0.0:%s/health", port)
 
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, host, port)
-        await site.start()
 
-        logger.info(f"aiohttp health server started on http://{host}:{port}/health")
-
-        # keep running
+async def _stop_aiohttp(application: "Application") -> None:
+    """Post-shutdown hook: cleanup aiohttp runner if present."""
+    runner = application.bot_data.pop("health_runner", None)
+    if runner is not None:
         try:
-            while True:
-                await asyncio.sleep(3600)
-        finally:
             await runner.cleanup()
-
-    def _thread_target():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(_run_server())
+            logger.info("Health endpoint stopped")
         except Exception as e:
-            logger.error(f"Health server failed: {e}")
-
-    thread = threading.Thread(target=_thread_target, name="health-server", daemon=True)
-    thread.start()
-    return thread
+            logger.error("Error cleaning up health endpoint: %s", e)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -173,10 +148,14 @@ def main():
     if not TELEGRAM_TOKEN:
         raise ValueError("Не задан TELEGRAM_BOT_TOKEN в .env файле")
 
-    # Start simple HTTP health server
-    start_health_server(host="0.0.0.0", port=8080)
-
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    # Build application and register lifecycle hooks to run the health endpoint
+    app = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .post_init(_start_aiohttp)
+        .post_shutdown(_stop_aiohttp)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
