@@ -64,9 +64,14 @@ docker-compose up -d --build
 docker-compose logs -f
 ```
 
-- HEALTHCHECK: в образ добавлена простая проверка, которая следит, что процесс `telegram-bot/bot.py` запущен (используется `pgrep`).
+- HEALTHCHECK: в образ добавлена HTTP проверка `curl -f http://127.0.0.1:8080/health` — она опрашивает `/health` на контейнере.
 
-Если хотите, я могу добавить простой HTTP ` /health` эндпоинт в бота (потребует небольшого изменения `bot.py`) — это упростит интеграцию с более сложными оркестраторами.
+Endpoints:
+
+- GET /health — liveness probe (возвращает 200 OK и тело `ok`).
+- GET /ready — readiness probe: быстрый пробный запрос к `OLLAMA_API_URL` (timeout 3s). Возвращает 200 если LLM доступна, иначе 503.
+
+Переменная окружения `HEALTH_PORT` (по умолчанию 8080) управляет портом health-сервера. См. `.env.example`.
 # 🤖 KIRA AI Assistant
 
 Telegram‑бот + лендинг с AI‑консультантом на базе OllamaFreeAPI.

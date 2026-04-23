@@ -3,6 +3,7 @@ import logging
 import threading
 import asyncio
 from aiohttp import web
+import aiohttp
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -91,6 +92,31 @@ async def _start_aiohttp(application: "Application") -> None:
         return web.Response(text="ok")
 
     aio_app.router.add_get("/health", _health)
+
+    async def _ready(request):
+        """Readiness check: quick call to OLLAMA_API_URL to verify dependency is reachable."""
+        if not OLLAMA_API_URL:
+            return web.Response(status=503, text="OLLAMA_API_URL not configured")
+
+        # small probe payload
+        payload = {
+            "model": OLLAMA_MODEL,
+            "messages": [{"role": "user", "content": "ping"}],
+            "stream": False,
+        }
+        try:
+            timeout = aiohttp.ClientTimeout(total=3)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(OLLAMA_API_URL, json=payload) as resp:
+                    if 200 <= resp.status < 300:
+                        return web.Response(status=200, text="ok")
+                    text = await resp.text()
+                    return web.Response(status=503, text=f"ollama: status={resp.status} body={text}")
+        except Exception as e:
+            logger.debug("Readiness probe failed: %s", e)
+            return web.Response(status=503, text=f"unreachable: {e}")
+
+    aio_app.router.add_get("/ready", _ready)
 
     runner = web.AppRunner(aio_app)
     await runner.setup()
