@@ -1,7 +1,8 @@
 import os
 import logging
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import asyncio
+from aiohttp import web
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -94,16 +95,46 @@ class _HealthHandler(BaseHTTPRequestHandler):
 
 
 def start_health_server(host: str = "0.0.0.0", port: int = 8080):
-    try:
-        server = HTTPServer((host, port), _HealthHandler)
-    except Exception as e:
-        logger.error(f"Не удалось запустить health server на {host}:{port}: {e}")
-        return None
+    """Start a minimal aiohttp health endpoint in a separate thread.
 
-    thread = threading.Thread(target=server.serve_forever, name="health-server", daemon=True)
+    Runs an aiohttp web app with GET /health -> 200 OK (text "ok").
+    The app is started on its own event loop inside a daemon thread so it
+    does not interfere with the bot's asyncio loop.
+    """
+
+    async def _run_server():
+        app = web.Application()
+
+        async def _health(request):
+            return web.Response(text="ok")
+
+        app.router.add_get("/health", _health)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host, port)
+        await site.start()
+
+        logger.info(f"aiohttp health server started on http://{host}:{port}/health")
+
+        # keep running
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            await runner.cleanup()
+
+    def _thread_target():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_run_server())
+        except Exception as e:
+            logger.error(f"Health server failed: {e}")
+
+    thread = threading.Thread(target=_thread_target, name="health-server", daemon=True)
     thread.start()
-    logger.info(f"Health server started on http://{host}:{port}/health")
-    return server
+    return thread
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
