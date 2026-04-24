@@ -4,6 +4,12 @@ Revises:
 Create Date: 2026-04-24 09:47:25.342246
 """
 
+# revision identifiers, used by Alembic.
+revision = 'ed4a22503f41'
+down_revision = None
+branch_labels = None
+depends_on = None
+
 from alembic import op
 import sqlalchemy as sa
 

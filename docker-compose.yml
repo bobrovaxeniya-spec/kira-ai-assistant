@@ -62,6 +62,7 @@ services:
       ollama:
         condition: service_healthy
     command: celery -A app.celery_worker worker --loglevel=info
+    restart: always
     volumes:
       - .:/app
     networks:
@@ -85,6 +86,7 @@ services:
       ollama:
         condition: service_healthy
     command: uvicorn app.orchestrator:app --host 0.0.0.0 --port 8000 --reload
+    restart: always
     volumes:
       - .:/app
     networks:
@@ -96,6 +98,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
     ports:
       - "5555:5555"
+    restart: always
     depends_on:
       - redis
       - celery_worker

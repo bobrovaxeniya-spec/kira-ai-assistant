@@ -3,6 +3,9 @@ import os
 import sys
 
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine
+import asyncio
 
 from alembic import context
 
@@ -35,6 +38,29 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    # Choose async path when an async driver is used (e.g. postgresql+asyncpg)
+    url = config.get_main_option("sqlalchemy.url")
+    if url and "+asyncpg" in url:
+        connectable = create_async_engine(url, poolclass=pool.NullPool)
+
+        async def do_run_migrations(connection):
+            # run migrations in sync context using connection.run_sync
+            def run_migrations_sync(conn):
+                context.configure(connection=conn, target_metadata=target_metadata)
+                with context.begin_transaction():
+                    context.run_migrations()
+
+            await connection.run_sync(run_migrations_sync)
+
+        async def run_async():
+            async with connectable.connect() as connection:
+                await do_run_migrations(connection)
+            await connectable.dispose()
+
+        asyncio.run(run_async())
+        return
+
+    # Fallback: sync engine
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix='sqlalchemy.',

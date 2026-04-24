@@ -75,7 +75,9 @@ async def shutdown_http_client():
     from app.http_client import close_client
     await close_client()
 
-# Хранилище сессий Киры (временно в памяти, но можно перенести в Redis)
+# Хранилище сессий Киры (для backward compatibility we keep kira_sessions but
+# prefer creating agent instances per session using persistent store in the
+# SalesMindAgent implementation)
 kira_sessions = {}
 
 # Инициализация агентов для быстрых вызовов
@@ -94,9 +96,15 @@ async def chat_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     user_message = data.get("message", "")
     session_id = data.get("sessionId", "default")
     
-    if session_id not in kira_sessions:
-        kira_sessions[session_id] = SalesMindAgent()
-    agent = kira_sessions[session_id]
+    # Instantiate SalesMindAgent per session_id; the agent itself persists
+    # minimal state to the session store (Redis or in-memory fallback).
+    try:
+        agent = SalesMindAgent(session_id)
+    except Exception:
+        # Fallback to older in-memory instance for compatibility
+        if session_id not in kira_sessions:
+            kira_sessions[session_id] = SalesMindAgent(session_id)
+        agent = kira_sessions[session_id]
 
     # SalesMindAgent exposes `run` as the main entrypoint; use it to avoid relying on
     # a non-guaranteed `handle_message` helper on the agent implementation.

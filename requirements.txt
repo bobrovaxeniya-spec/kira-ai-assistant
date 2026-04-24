@@ -12,6 +12,7 @@ alembic==1.13.0
 pgvector==0.2.5
 prometheus-fastapi-instrumentator==7.0.0
 PyGithub==2.3.0
+psycopg2-binary==2.9.12
 matplotlib==3.9.0
 pandas==2.2.0
 # Дополнительно для Фазы 5
