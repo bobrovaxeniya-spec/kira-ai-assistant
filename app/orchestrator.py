@@ -15,18 +15,6 @@ from app.models import Base
 import json
 from app.models import Client, Project, TechnicalTask, Task, Conversation, MarketingPost
 from app.schemas import ClientCreate, ProjectCreate, TechnicalTaskCreate
-from app.agents.salesmind import SalesMindAgent
-from app.agents.backsmith import BackSmithAgent
-from app.agents.frontforge import FrontForgeAgent
-from app.agents.testpilot import TestPilotAgent
-from app.agents.projectcore import ProjectCoreAgent
-from app.agents.linkmaster import LinkMasterAgent
-from app.agents.repomanager import RepoManagerAgent
-from app.agents.auditor import AuditorAgent
-from app.agents.marketvibe import MarketVibeAgent
-from app.agents.datapulse import DataPulseAgent
-from app.agents.numlock import NumLockAgent
-from app.agents.legalguard import LegalGuardAgent
 
 load_dotenv()
 
@@ -81,16 +69,6 @@ async def shutdown_http_client():
 
 # Хранилище сессий Киры (временно в памяти, но можно перенести в Redis)
 kira_sessions = {}
-
-# Инициализация агентов для быстрых вызовов
-backsmith = BackSmithAgent()
-frontforge = FrontForgeAgent()
-testpilot = TestPilotAgent()
-projectcore = ProjectCoreAgent()
-linkmaster = LinkMasterAgent()
-repomanager = RepoManagerAgent()
-auditor = AuditorAgent()
-marketvibe = MarketVibeAgent()
 
 @app.post("/webhook/chat-webhook")
 async def chat_webhook(request: Request, db: AsyncSession = Depends(get_db)):
@@ -157,6 +135,8 @@ async def generate_frontend(request: Request, db: AsyncSession = Depends(get_db)
     project_id = data.get("project_id")
     if not spec:
         raise HTTPException(400, "Missing 'spec' field")
+    from app.agents.frontforge import FrontForgeAgent
+    frontforge = FrontForgeAgent()
     code = await frontforge.build_component(spec)
     if project_id:
         db_task = Task(project_id=project_id, task_type="frontend", assigned_agent="FrontForge",
@@ -174,6 +154,8 @@ async def check_integration(request: Request):
     back_code = data.get("back_code") or data.get("back") or data.get("backend")
     if not front_code or not back_code:
         raise HTTPException(400, "Missing front_code or back_code")
+    from app.agents.linkmaster import LinkMasterAgent
+    linkmaster = LinkMasterAgent()
     result = await linkmaster.check_integration(front_code, back_code)
     return result
 
@@ -186,6 +168,8 @@ async def create_repo(request: Request):
     private = data.get("private", True)
     if not repo_name:
         raise HTTPException(400, "Missing 'repo_name'")
+    from app.agents.repomanager import RepoManagerAgent
+    repomanager = RepoManagerAgent()
     result = await repomanager.create_repo(repo_name, description, private)
     return result
 
@@ -198,6 +182,8 @@ async def push_to_repo(request: Request):
     commit_message = data.get("commit_message", "AI generated code")
     if not repo_name or not files:
         raise HTTPException(400, "Missing repo_name or files")
+    from app.agents.repomanager import RepoManagerAgent
+    repomanager = RepoManagerAgent()
     result = await repomanager.push_files(repo_name, files, commit_message)
     return result
 
@@ -219,6 +205,8 @@ async def audit_conversation(request: Request, db: AsyncSession = Depends(get_db
     )
     conv_list = convs.scalars().all()
     history = "\n".join([f"{c.sender}: {c.message}" for c in conv_list]) if conv_list else ""
+    from app.agents.auditor import AuditorAgent
+    auditor = AuditorAgent()
     tz = await auditor.audit(history)
     # Сохранить в БД как TechnicalTask
     project = Project(name=f"Аудит {client_id}", client_id=client_id, status="analysis")
@@ -240,6 +228,8 @@ async def generate_post(request: Request, db: AsyncSession = Depends(get_db)):
     if not project:
         return {"error": "Project not found"}
     case_study = f"Проект {project.name} завершён. Бюджет: {project.budget}."
+    from app.agents.marketvibe import MarketVibeAgent
+    marketvibe = MarketVibeAgent()
     post = await marketvibe.generate_post(case_study)
     # Сохранить в БД (marketing_posts table)
     mp = None
@@ -258,6 +248,7 @@ async def generate_post(request: Request, db: AsyncSession = Depends(get_db)):
 
 @app.get("/reports/weekly")
 async def weekly_report(db: AsyncSession = Depends(get_db)):
+    from app.agents.datapulse import DataPulseAgent
     datapulse = DataPulseAgent(db)
     report = await datapulse.generate_weekly_report()
     return {"report": report}
@@ -317,6 +308,8 @@ async def generate_tests(request: Request):
     code = data.get("code")
     if not code:
         raise HTTPException(400, "Missing 'code' field")
+    from app.agents.testpilot import TestPilotAgent
+    testpilot = TestPilotAgent()
     tests = await testpilot.write_tests(code)
     return {"tests": tests}
 
@@ -340,6 +333,8 @@ async def execute_project(request: Request, db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     # Запускаем ProjectCore (долго, поэтому через Celery? пока просто await)
+    from app.agents.projectcore import ProjectCoreAgent
+    projectcore = ProjectCoreAgent()
     start = time.time()
     result = await projectcore.execute_with_quality_loop(task_description)
     task_duration.labels(agent='ProjectCore').observe(time.time() - start)
