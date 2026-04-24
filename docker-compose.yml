@@ -50,6 +50,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.celery
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://aiagent:StrongPassword123@postgres:5432/ai_team
       - REDIS_URL=redis://redis:6379/0
@@ -72,6 +74,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://aiagent:StrongPassword123@postgres:5432/ai_team
       - REDIS_URL=redis://redis:6379/0
