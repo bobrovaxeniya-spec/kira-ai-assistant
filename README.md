@@ -1,96 +1,75 @@
 # 🤖 KIRA AI Assistant
 
 Telegram‑бот + лендинг с AI‑консультантом на базе OllamaFreeAPI.
+ # AI Team — Фаза 1
 
-## Возможности
-- Отвечает на вопросы клиентов в Telegram
-- Собирает техническое задание на создание ботов/автоматизацию
-- Имеет харизматичный стиль общения (дерзкий, но профессиональный)
-- Сайт‑визитка с чатом (интеграция через Telegram)
+ ## Запуск
 
-## Технологии
-- Python + python-telegram-bot
-- OllamaFreeAPI (LLM)
-- HTML/CSS/JS
-- Cloudflare Pages (для сайта)
+ 1. Скопируйте `.env.example` в `.env` (при необходимости отредактируйте)
+ 2. Запустите все сервисы:
+    ```bash
+    make up
+    ```
+    Дождитесь, пока PostgreSQL, Redis и Ollama поднимутся (около 30 секунд)
 
-## Установка и запуск бота локально
+ Проверьте, что API работает:
 
-1. Клонируйте репозиторий:
-   ```bash
-   git clone https://github.com/bobrovaxeniya-spec/kira-ai-assistant.git
-   cd kira-ai-assistant
-   ```
+ ```bash
+ curl http://localhost:8000/
+ ```
 
-2. Создайте файл `.env` на основе примера и заполните переменные:
-   ```bash
-   cp .env.example .env
-   # затем откройте .env и подставьте TELEGRAM_BOT_TOKEN и при необходимости OLLAMA_API_URL
-   ```
+ Откройте Flower для просмотра задач Celery: http://localhost:5555
 
-3. Установите зависимости и запустите бота:
-   ```bash
-   pip install -r requirements.txt
-   python telegram-bot/bot.py
-   ```
+ ### Остановка
 
-## Контакты и деплой
+ ```bash
+ make down
+ ```
 
-Сайт собирается как статический сайт в каталоге `website/`. Для деплоя на Cloudflare Pages укажите ветку с контентом и путь `/website` (см. `.github/copilot-instructions.md` для кратких указаний).
-# Docker
+ ### Логи
 
-Для удобного запуска в контейнере добавлены Dockerfile и `docker-compose.yml`.
+ ```bash
+ make logs          # все логи
+ make api-logs      # только API
+ make celery-logs   # только воркер
+ ```
 
-Советы и быстрые команды:
+ ### Что дальше?
+ Добавить модели данных (PostgreSQL)
 
-- Сборка локального образа:
+ Реализовать агентов (Kira, Auditor, etc.)
 
-```bash
-docker build -t kira-bot:latest .
-```
+ Настроить миграции Alembic
 
-- Запуск контейнера (рекомендуется передавать `.env` через `--env-file`):
+ ---
 
-```bash
-docker run --env-file .env --name kira-bot --restart unless-stopped kira-bot:latest
-```
+ ## 🚀 Как использовать
 
-- macOS локальная заметка по Ollama: если Ollama запущен локально на хосте, в `.env` используйте `http://host.docker.internal:11434/v1/chat/completions` в качестве `OLLAMA_API_URL`, иначе контейнер не увидит `localhost` хоста.
+ 1. **Скопируйте** все приведённые выше файлы в ваш приватный репозиторий (создайте их через интерфейс GitHub или через `git clone` локально, затем `git push`).
 
-- Docker Compose (удобно для dev):
+ 2. **Запустите**:
+    ```bash
+    docker-compose up -d
+    ```
+    Проверьте:
 
-```bash
-docker-compose up -d --build
-docker-compose logs -f
-```
+ ```bash
+ curl http://localhost:8000/
+ ```
+ Убедитесь, что все контейнеры работают:
 
-- HEALTHCHECK: в образ добавлена HTTP проверка `curl -f http://127.0.0.1:8080/health` — она опрашивает `/health` на контейнере.
+ ```bash
+ docker-compose ps
+ ```
+ Что теперь?
+ У вас есть работающий фундамент:
 
-Endpoints:
+ FastAPI оркестратор (порт 8000)
 
-- GET /health — liveness probe (возвращает 200 OK и тело `ok`).
-- GET /ready — readiness probe: быстрый пробный запрос к `OLLAMA_API_URL` (timeout 3s). Возвращает 200 если LLM доступна, иначе 503.
+ Celery воркер для фоновых задач
 
-Переменная окружения `HEALTH_PORT` (по умолчанию 8080) управляет портом health-сервера. См. `.env.example`.
-# 🤖 KIRA AI Assistant
+ Redis как брокер
 
-Telegram‑бот + лендинг с AI‑консультантом на базе OllamaFreeAPI.
+ PostgreSQL пустая, но готова
 
-## Возможности
-- Отвечает на вопросы клиентов в Telegram
-- Собирает техническое задание на создание ботов/автоматизацию
-- Имеет харизматичный стиль общения (дерзкий, но профессиональный)
-- Сайт‑визитка с чатом (интеграция через Telegram)
-
-## Технологии
-- Python + python-telegram-bot
-- OllamaFreeAPI (LLM)
-- HTML/CSS/JS
-- Cloudflare Pages (для сайта)
-
-## Установка и запуск бота локально
-
-1. Клонируйте репозиторий:
-   ```bash
-   git clone https://github.com/bobrovaxeniya-spec/kira-ai-assistant.git
-   cd kira-ai-assistant
+ Flower для мониторинга задач (http://localhost:5555)
