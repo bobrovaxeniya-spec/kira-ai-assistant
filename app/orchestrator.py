@@ -14,8 +14,7 @@ from app.database import get_db, engine
 from app.models import Base
 import json
 from app.models import Client, Project, TechnicalTask, Task, Conversation, MarketingPost
-# from app.schemas import ClientCreate, ProjectCreate, TechnicalTaskCreate
-# NOTE: schemas are not present in the repo currently; re-enable when Pydantic schemas are added.
+from app.schemas import ClientCreate, ProjectCreate, TechnicalTaskCreate
 from app.agents.salesmind import SalesMindAgent
 from app.agents.backsmith import BackSmithAgent
 from app.agents.frontforge import FrontForgeAgent
@@ -32,6 +31,11 @@ from app.agents.legalguard import LegalGuardAgent
 load_dotenv()
 
 app = FastAPI(title="AI Team Orchestrator", version="2.0")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 # Prometheus instrumentation
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
