@@ -50,9 +50,18 @@ celery_app = Celery(
 # Инициализация БД (создание таблиц) - в проде использовать alembic, но для начала автоматически
 @app.on_event("startup")
 async def init_db():
-    async with engine.begin() as conn:
-        # await conn.run_sync(Base.metadata.drop_all)  # осторожно!
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            # await conn.run_sync(Base.metadata.drop_all)  # осторожно!
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        # In local/dev without a running Postgres container, don't fail startup.
+        try:
+            from logger_config import logger
+            logger.warning(f"init_db: could not initialize DB, skipping create_all: {e}")
+        except Exception:
+            import logging
+            logging.warning(f"init_db: could not initialize DB, skipping create_all: {e}")
 
 
 @app.on_event("startup")
