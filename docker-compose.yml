@@ -47,7 +47,9 @@ services:
       - ai_network
 
   celery_worker:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
     environment:
       - DATABASE_URL=postgresql://aiagent:StrongPassword123@postgres:5432/ai_team
       - REDIS_URL=redis://redis:6379/0
@@ -66,7 +68,9 @@ services:
       - ai_network
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     environment:
       - DATABASE_URL=postgresql://aiagent:StrongPassword123@postgres:5432/ai_team
       - REDIS_URL=redis://redis:6379/0

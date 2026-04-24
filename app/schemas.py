@@ -34,6 +34,7 @@ class TechnicalTaskResponse(TechnicalTaskCreate):
     is_current: bool
 
 class TaskCreate(BaseModel):
+    project_id: Optional[int]
     task_type: str
     assigned_agent: str
     input_data: str
