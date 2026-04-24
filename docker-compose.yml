@@ -16,6 +16,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - ai_network
 
   redis:
     image: redis:7-alpine
@@ -26,6 +28,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - ai_network
 
   ollama:
     image: ollama/ollama:latest
@@ -39,11 +43,11 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - ai_network
 
   celery_worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.celery
+    build: .
     environment:
       - DATABASE_URL=postgresql://aiagent:StrongPassword123@postgres:5432/ai_team
       - REDIS_URL=redis://redis:6379/0
@@ -55,7 +59,30 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
-    command: celery -A celery_worker worker --loglevel=info
+    command: celery -A app.celery_worker worker --loglevel=info
+    volumes:
+      - .:/app
+    networks:
+      - ai_network
+
+  api:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://aiagent:StrongPassword123@postgres:5432/ai_team
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_URL=http://ollama:11434
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    command: uvicorn app.orchestrator:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
     networks:
       - ai_network
 
@@ -71,49 +98,9 @@ services:
     networks:
       - ai_network
 
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    environment:
-      - DATABASE_URL=postgresql://aiagent:StrongPassword123@postgres:5432/ai_team
-      - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_URL=http://ollama:11434
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-    command: uvicorn orchestrator:app --host 0.0.0.0 --port 8000 --reload
-    networks:
-      - ai_network
-
 volumes:
   postgres_data:
   ollama_data:
-  prometheus:
-    image: prom/prometheus:latest
-    volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks:
-      - ai_network
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    networks:
-      - ai_network
 
 networks:
   ai_network:
