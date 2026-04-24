@@ -8,6 +8,7 @@ import socket
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import httpx
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -77,6 +78,35 @@ def send_llm_request(user_message: str) -> str:
         return data.get("choices", [])[0].get("message", {}).get("content", "")
     except Exception:
         return ""
+
+
+async def async_send_llm_request(user_message: str) -> str:
+    """Async version of send_llm_request using httpx.AsyncClient.
+
+    Kept lightweight and with a short timeout to avoid blocking the bot.
+    """
+    if not OLLAMA_API_URL:
+        raise ValueError("OLLAMA_API_URL not set")
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+        "stream": False,
+    }
+
+    timeout = httpx.Timeout(30.0)
+    limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
+    async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+        resp = await client.post(OLLAMA_API_URL, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        try:
+            return data.get("choices", [])[0].get("message", {}).get("content", "")
+        except Exception:
+            return ""
 
 
 async def _start_aiohttp(application: "Application") -> None:
@@ -180,26 +210,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming text messages"""
+    if update.message is None or update.message.text is None:
+        logger.debug("Received update without message or text")
+        return
+
     user_message = update.message.text
 
     try:
         try:
-            ai_reply = send_llm_request(user_message)
+            # Prefer async http client to avoid blocking the bot
+            ai_reply = await async_send_llm_request(user_message)
             if not ai_reply:
                 raise ValueError("Empty reply from LLM")
         except Exception as e:
-            logger.error(f"Ошибка при запросе к Ollama: {e}")
-            ai_reply = "😬 Ой, нейросеть приуныла. Попробуй ещё раз чуть позже."
+            logger.error(f"Ошибка при запросе к Ollama (async): {e}")
+            # fallback to sync implementation if async fails for any reason
+            try:
+                ai_reply = send_llm_request(user_message)
+            except Exception as e2:
+                logger.error(f"Fallback sync LLM request failed: {e2}")
+                ai_reply = "😬 Ой, нейросеть приуныла. Попробуй ещё раз чуть позже."
 
-    except Exception as e:
+    except Exception:
         logger.exception("Unhandled error while processing message")
         ai_reply = "😬 Произошла ошибка при обработке вашего запроса. Попробуйте позже."
 
     await update.message.reply_text(ai_reply)
 
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # `add_error_handler` expects a callback accepting `object` as the update type
+    # Keep runtime behavior: log the exception info from context
+    logger.error(msg="Exception while handling an update:", exc_info=getattr(context, "error", None))
 
 
 def main():
